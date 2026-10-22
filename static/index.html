@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Document Intelligence</title>
+  <style>
+    :root {
+      --bg: #f6f7fb; --card: #ffffff; --text: #1c2030; --muted: #6b7280;
+      --primary: #4f46e5; --primary-dark: #4338ca; --border: #e5e7eb;
+      --chip: #eef2ff; --chip-text: #3730a3; --error: #b91c1c;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text);
+           font-family: -apple-system, "Segoe UI", Roboto, sans-serif; line-height: 1.5; }
+    .wrap { max-width: 760px; margin: 0 auto; padding: 48px 20px 80px; }
+    header h1 { margin: 0 0 6px; font-size: 28px; }
+    header p { margin: 0 0 28px; color: var(--muted); }
+
+    .panel { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+             padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,.04); }
+    .drop { display: block; border: 2px dashed var(--border); border-radius: 12px;
+            padding: 36px 16px; text-align: center; cursor: pointer; transition: .15s; }
+    .drop:hover, .drop.over { border-color: var(--primary); background: var(--chip); }
+    .drop strong { display: block; font-size: 16px; }
+    .drop span { color: var(--muted); font-size: 14px; }
+    #fileInput { display: none; }
+
+    button { margin-top: 16px; width: 100%; padding: 12px; border: 0; border-radius: 10px;
+             background: var(--primary); color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; }
+    button:hover { background: var(--primary-dark); }
+    button:disabled { opacity: .6; cursor: not-allowed; }
+
+    #status { margin: 14px 0 0; min-height: 22px; color: var(--muted); font-size: 14px; }
+    #status.error { color: var(--error); }
+    .spinner { display: inline-block; width: 14px; height: 14px; margin-right: 8px; vertical-align: -2px;
+               border: 2px solid var(--border); border-top-color: var(--primary); border-radius: 50%;
+               animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    h2 { font-size: 18px; margin: 36px 0 4px; }
+    .result-card { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+                   padding: 20px 24px; margin-top: 14px; }
+    .result-card.fresh { border-color: var(--primary); box-shadow: 0 0 0 3px var(--chip); }
+    .top { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+    .name { font-size: 18px; font-weight: 700; }
+    .file { font-size: 13px; color: var(--muted); }
+    .meta { margin: 4px 0 12px; color: var(--muted); }
+    .chip { display: inline-block; background: var(--chip); color: var(--chip-text);
+            border-radius: 999px; padding: 3px 12px; margin: 0 6px 6px 0; font-size: 13px; font-weight: 500; }
+    .summary { margin: 8px 0 0; }
+    .empty { color: var(--muted); margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Document Intelligence</h1>
+      <p>Upload a CV in PDF format. AI extracts name, role, experience and skills as structured data.</p>
+    </header>
+
+    <div class="panel">
+      <label class="drop" id="drop" for="fileInput">
+        <strong id="dropTitle">Click to choose a PDF</strong>
+        <span id="dropHint">or drag and drop it here</span>
+      </label>
+      <input type="file" id="fileInput" accept="application/pdf">
+      <button id="analyzeBtn">Analyze</button>
+      <p id="status"></p>
+    </div>
+
+    <div id="result"></div>
+
+    <h2>Previous analyses</h2>
+    <div id="history"></div>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById("fileInput");
+    const drop = document.getElementById("drop");
+    const dropTitle = document.getElementById("dropTitle");
+    const dropHint = document.getElementById("dropHint");
+    const btn = document.getElementById("analyzeBtn");
+    const statusEl = document.getElementById("status");
+    const resultEl = document.getElementById("result");
+    const historyEl = document.getElementById("history");
+
+    function showFile(file) {
+      dropTitle.textContent = file.name;
+      dropHint.textContent = "Ready to analyze";
+    }
+
+    fileInput.addEventListener("change", () => {
+      if (fileInput.files[0]) showFile(fileInput.files[0]);
+    });
+    ["dragenter", "dragover"].forEach(ev => drop.addEventListener(ev, e => {
+      e.preventDefault(); drop.classList.add("over");
+    }));
+    ["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => {
+      e.preventDefault(); drop.classList.remove("over");
+    }));
+    drop.addEventListener("drop", e => {
+      if (e.dataTransfer.files[0]) {
+        fileInput.files = e.dataTransfer.files;
+        showFile(e.dataTransfer.files[0]);
+      }
+    });
+
+    function el(tag, className, text) {
+      const n = document.createElement(tag);
+      if (className) n.className = className;
+      if (text !== undefined) n.textContent = text;
+      return n;
+    }
+
+    function renderCard(container, filename, a, fresh) {
+      const card = el("div", "result-card" + (fresh ? " fresh" : ""));
+
+      const top = el("div", "top");
+      top.appendChild(el("div", "name", a.name || "Unknown"));
+      top.appendChild(el("div", "file", filename));
+      card.appendChild(top);
+
+      const years = a.experience_years;
+      const exp = (years === null || years === undefined) ? "experience not stated" : years + " years experience";
+      card.appendChild(el("div", "meta", (a.role || "Role not stated") + " · " + exp));
+
+      const skills = el("div");
+      (a.skills || []).forEach(s => skills.appendChild(el("span", "chip", s)));
+      card.appendChild(skills);
+
+      if (a.summary) card.appendChild(el("p", "summary", a.summary));
+      container.appendChild(card);
+    }
+
+    async function loadHistory() {
+      historyEl.innerHTML = "";
+      try {
+        const res = await fetch("/documents");
+        const rows = await res.json();
+        if (!rows.length) { historyEl.appendChild(el("p", "empty", "Nothing analyzed yet.")); return; }
+        rows.forEach(r => renderCard(historyEl, r.filename, r, false));
+      } catch (e) {
+        historyEl.appendChild(el("p", "empty", "Could not load history."));
+      }
+    }
+
+    btn.addEventListener("click", async () => {
+      const file = fileInput.files[0];
+      statusEl.className = "";
+      if (!file) { statusEl.textContent = "Please choose a PDF first."; return; }
+
+      btn.disabled = true;
+      resultEl.innerHTML = "";
+      statusEl.textContent = "";
+      statusEl.appendChild(el("span", "spinner"));
+      statusEl.appendChild(document.createTextNode("Analyzing... this can take 10-20 seconds"));
+
+      const form = new FormData();
+      form.append("file", file);
+
+      try {
+        const res = await fetch("/documents/analyze", { method: "POST", body: form });
+        const data = await res.json();
+        if (!res.ok) {
+          statusEl.className = "error";
+          statusEl.textContent = "Error: " + (typeof data.detail === "string" ? data.detail : res.status);
+        } else {
+          statusEl.textContent = "Done.";
+          renderCard(resultEl, data.filename, data.analysis, true);
+          loadHistory();
+        }
+      } catch (e) {
+        statusEl.className = "error";
+        statusEl.textContent = "Could not reach the server.";
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    loadHistory();
+  </script>
+</body>
+</html>
